@@ -1,5 +1,7 @@
 # ServerLaunch
 
+[![CI](https://github.com/your-username/ServerLaunch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/ServerLaunch/actions/workflows/ci.yml)
+
 A desktop application to launch and manage AWS EC2 instances without ever opening the AWS Console. Built with Electron, React, and the AWS SDK v3.
 
 ---
