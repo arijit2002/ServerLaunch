@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+src/renderer.bundle.js
+src/renderer.bundle.js.map
+
+# Electron packaged builds
+dist/
+out/
+release/
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Misc
+.cache/
+.parcel-cache/
