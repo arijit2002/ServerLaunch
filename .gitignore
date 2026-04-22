@@ -44,3 +44,6 @@ logs/
 # Misc
 .cache/
 .parcel-cache/
+
+# Graphify (generated knowledge graph - rebuild locally with /graphify)
+graphify-out/
