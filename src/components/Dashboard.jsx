@@ -4,26 +4,53 @@ import { DEFAULT_REGIONS } from '../utils/constants';
 import { useToast } from './Toast';
 
 const FILTERS = ['all', 'running', 'stopped', 'pending', 'terminated'];
+const ALL_REGIONS = 'all';
 
 export default function Dashboard({ onLaunch }) {
-  const [instances, setInstances]  = useState([]);
-  const [region, setRegion]        = useState('us-east-1');
-  const [filter, setFilter]        = useState('all');
-  const [loading, setLoading]      = useState(false);
+  const [instances, setInstances]     = useState([]);
+  const [region, setRegion]           = useState('us-east-1');
+  const [filter, setFilter]           = useState('all');
+  const [loading, setLoading]         = useState(false);
+  const [scanProgress, setScanProgress] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const toast = useToast();
 
   const fetchInstances = useCallback(async (rgn) => {
     setLoading(true);
-    const res = await window.serverLaunch.listInstances(rgn || region);
-    setLoading(false);
-    if (res.success) {
-      setInstances(res.instances);
-      setLastRefresh(new Date());
+    setInstances([]);
+
+    if (rgn === ALL_REGIONS) {
+      setScanProgress({ done: 0, total: DEFAULT_REGIONS.length });
+      let done = 0;
+      const results = await Promise.allSettled(
+        DEFAULT_REGIONS.map(async r => {
+          const res = await window.serverLaunch.listInstances(r.value);
+          done++;
+          setScanProgress({ done, total: DEFAULT_REGIONS.length });
+          return res;
+        })
+      );
+      setScanProgress(null);
+      const all = [];
+      let errors = 0;
+      results.forEach(r => {
+        if (r.status === 'fulfilled' && r.value.success) all.push(...r.value.instances);
+        else errors++;
+      });
+      setInstances(all);
+      if (errors > 0) toast(`${errors} region(s) failed to load`, 'warning');
     } else {
-      toast(res.error, 'error');
+      const res = await window.serverLaunch.listInstances(rgn);
+      if (res.success) {
+        setInstances(res.instances);
+      } else {
+        toast(res.error, 'error');
+      }
     }
-  }, [region, toast]);
+
+    setLoading(false);
+    setLastRefresh(new Date());
+  }, [toast]);
 
   useEffect(() => { fetchInstances(region); }, [region]);
 
@@ -50,10 +77,12 @@ export default function Dashboard({ onLaunch }) {
         <div style={styles.topActions}>
           <select
             className="select"
-            style={{ width: 230 }}
+            style={{ width: 240 }}
             value={region}
             onChange={e => setRegion(e.target.value)}
           >
+            <option value={ALL_REGIONS}>🌍 All Regions</option>
+            <option disabled>──────────────────</option>
             {DEFAULT_REGIONS.map(r => (
               <option key={r.value} value={r.value}>{r.label}</option>
             ))}
@@ -92,16 +121,23 @@ export default function Dashboard({ onLaunch }) {
         {loading && instances.length === 0 ? (
           <div className="empty-state">
             <span className="spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
-            <p>Loading instances…</p>
+            {scanProgress
+              ? <p>Scanning regions… {scanProgress.done} / {scanProgress.total}</p>
+              : <p>Loading instances…</p>}
+            {scanProgress && (
+              <div style={styles.progressBar}>
+                <div style={{ ...styles.progressFill, width: `${(scanProgress.done / scanProgress.total) * 100}%` }} />
+              </div>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             <span className="empty-state-icon">📭</span>
             <p style={{ fontSize: 15, color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {filter === 'all' ? 'No instances in this region' : `No ${filter} instances`}
+              {filter === 'all' ? 'No instances found' : `No ${filter} instances`}
             </p>
             <p style={{ fontSize: 13 }}>
-              {filter === 'all' ? 'Launch one to get started.' : 'Try a different filter or region.'}
+              {filter === 'all' ? 'Launch one to get started.' : 'Try a different filter.'}
             </p>
             {filter === 'all' && (
               <button className="btn btn-primary" onClick={onLaunch} style={{ marginTop: 8 }}>
@@ -109,6 +145,8 @@ export default function Dashboard({ onLaunch }) {
               </button>
             )}
           </div>
+        ) : region === ALL_REGIONS ? (
+          <RegionGroups instances={filtered} onRefresh={() => fetchInstances(region)} />
         ) : (
           <div style={styles.grid}>
             {filtered.map(instance => (
@@ -121,6 +159,32 @@ export default function Dashboard({ onLaunch }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function RegionGroups({ instances, onRefresh }) {
+  const grouped = instances.reduce((acc, i) => {
+    if (!acc[i.region]) acc[i.region] = [];
+    acc[i.region].push(i);
+    return acc;
+  }, {});
+  const sortedRegions = Object.keys(grouped).sort();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {sortedRegions.map(rgn => (
+        <div key={rgn}>
+          <div style={styles.regionHeader}>
+            <span style={styles.regionLabel}>{rgn}</span>
+            <span style={styles.regionCount}>{grouped[rgn].length} instance{grouped[rgn].length !== 1 ? 's' : ''}</span>
+          </div>
+          <div style={styles.grid}>
+            {grouped[rgn].map(instance => (
+              <InstanceCard key={instance.id} instance={instance} onRefresh={onRefresh} />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -230,5 +294,40 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
     gap: 14,
+  },
+  regionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottom: '1px solid var(--border)',
+  },
+  regionLabel: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: 'var(--text-secondary)',
+    fontFamily: 'monospace',
+  },
+  regionCount: {
+    fontSize: 11.5,
+    color: 'var(--text-muted)',
+    background: 'var(--bg-tertiary)',
+    padding: '2px 8px',
+    borderRadius: 10,
+  },
+  progressBar: {
+    width: 200,
+    height: 4,
+    background: 'var(--bg-tertiary)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  progressFill: {
+    height: '100%',
+    background: 'var(--accent)',
+    borderRadius: 2,
+    transition: 'width 300ms ease',
   },
 };

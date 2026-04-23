@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { INSTANCE_TYPES, DEFAULT_REGIONS, OS_OPTIONS } from '../utils/constants';
+import { INSTANCE_TYPES, DEFAULT_REGIONS, OS_OPTIONS, estimateCost } from '../utils/constants';
 import { useToast } from './Toast';
 
 const DEFAULT_FORM = {
@@ -54,7 +54,9 @@ export default function LaunchInstance({ onDone }) {
   if (step === 'launching') return <LaunchingScreen />;
   if (step === 'done') return <SuccessScreen instanceId={result} region={form.region} onDone={onDone} onAnother={() => { setForm(DEFAULT_FORM); setStep('form'); }} />;
 
-  const selectedOS = OS_OPTIONS.find(o => o.value === form.os);
+  const selectedOS   = OS_OPTIONS.find(o => o.value === form.os);
+  const cost         = estimateCost(form.instanceType, form.storageSize);
+  const selectedType = INSTANCE_TYPES.find(t => t.value === form.instanceType);
 
   return (
     <div style={styles.root}>
@@ -101,12 +103,24 @@ export default function LaunchInstance({ onDone }) {
           </Section>
 
           {/* Instance Type */}
-          <Section title="3  Instance Type (RAM / vCPU)">
-            <select className="select" value={form.instanceType} onChange={e => setField('instanceType', e.target.value)}>
+          <Section title="3  Instance Type">
+            <div style={styles.typeGrid}>
               {INSTANCE_TYPES.map(t => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+                <button
+                  key={t.value}
+                  style={{ ...styles.typeCard, ...(form.instanceType === t.value ? styles.typeCardActive : {}) }}
+                  onClick={() => setField('instanceType', t.value)}
+                >
+                  <div style={styles.typeLeft}>
+                    <span style={styles.typeName}>{t.label}</span>
+                    <span style={styles.typeSpec}>{t.vcpu} vCPU · {t.ram}</span>
+                  </div>
+                  <span style={{ ...styles.typePrice, ...(form.instanceType === t.value ? styles.typePriceActive : {}) }}>
+                    ${t.pricePerHour.toFixed(4)}/hr
+                  </span>
+                </button>
               ))}
-            </select>
+            </div>
           </Section>
 
           {/* Storage */}
@@ -148,18 +162,26 @@ export default function LaunchInstance({ onDone }) {
           <div style={styles.summaryCard}>
             <h3 style={styles.summaryTitle}>Summary</h3>
             <div style={styles.summaryRows}>
-              <SummaryRow label="Name"         value={form.name || '—'} />
-              <SummaryRow label="OS"           value={`${selectedOS.icon} ${selectedOS.label}`} />
-              <SummaryRow label="Type"         value={form.instanceType} mono />
-              <SummaryRow label="Storage"      value={`${form.storageSize} GB (gp3)`} />
-              <SummaryRow label="Region"       value={DEFAULT_REGIONS.find(r => r.value === form.region)?.label || form.region} />
+              <SummaryRow label="Name"    value={form.name || '—'} />
+              <SummaryRow label="OS"      value={`${selectedOS.icon} ${selectedOS.label}`} />
+              <SummaryRow label="Type"    value={form.instanceType} mono />
+              <SummaryRow label="Storage" value={`${form.storageSize} GB (gp3)`} />
+              <SummaryRow label="Region"  value={DEFAULT_REGIONS.find(r => r.value === form.region)?.label || form.region} />
             </div>
 
-            <div style={styles.noteBox}>
-              <p style={styles.noteText}>
-                ⚠ A new instance will incur AWS charges based on the type and running time.
-              </p>
-            </div>
+            {cost && (
+              <div style={styles.costBox}>
+                <p style={styles.costTitle}>Estimated Cost</p>
+                <div style={styles.costRows}>
+                  <CostRow label={`${form.instanceType} (730 hrs)`} value={`$${cost.instanceMonthly.toFixed(2)}/mo`} />
+                  <CostRow label={`${form.storageSize} GB gp3`}     value={`$${cost.storageMonthly.toFixed(2)}/mo`} />
+                  <div style={styles.costDivider} />
+                  <CostRow label="Hourly"           value={`$${cost.hourly.toFixed(4)}/hr`} muted />
+                  <CostRow label="Monthly estimate" value={`$${cost.totalMonthly.toFixed(2)}/mo`} highlight />
+                </div>
+                <p style={styles.costNote}>us-east-1 on-demand Linux pricing · actual costs may vary by region</p>
+              </div>
+            )}
 
             <button
               className="btn btn-primary btn-full btn-lg"
@@ -192,6 +214,17 @@ function SummaryRow({ label, value, mono }) {
     <div style={styles.summaryRow}>
       <span style={styles.summaryLabel}>{label}</span>
       <span style={{ ...styles.summaryValue, fontFamily: mono ? 'monospace' : 'inherit' }}>{value}</span>
+    </div>
+  );
+}
+
+function CostRow({ label, value, highlight, muted }) {
+  return (
+    <div style={styles.costRow}>
+      <span style={{ ...styles.costLabel, opacity: muted ? 0.6 : 1 }}>{label}</span>
+      <span style={{ ...styles.costValue, color: highlight ? '#22c55e' : undefined, fontWeight: highlight ? 700 : 500 }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -373,17 +406,62 @@ const styles = {
     textAlign: 'right',
     wordBreak: 'break-all',
   },
-  noteBox: {
-    background: 'rgba(245,158,11,0.08)',
-    border: '1px solid rgba(245,158,11,0.2)',
+  typeGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  typeCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 14px',
     borderRadius: 8,
-    padding: '10px 12px',
+    border: '1px solid var(--border)',
+    background: 'var(--bg-primary)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'border-color 150ms',
+  },
+  typeCardActive: {
+    borderColor: 'var(--accent)',
+    background: 'var(--accent-dim)',
+  },
+  typeLeft: { display: 'flex', flexDirection: 'column', gap: 2 },
+  typeName: { fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' },
+  typeSpec:  { fontSize: 11.5, color: 'var(--text-muted)' },
+  typePrice: {
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    fontFamily: 'monospace',
+  },
+  typePriceActive: { color: 'var(--accent)' },
+  costBox: {
+    background: 'rgba(34,197,94,0.06)',
+    border: '1px solid rgba(34,197,94,0.2)',
+    borderRadius: 8,
+    padding: '12px 14px',
     marginTop: 16,
   },
-  noteText: {
-    fontSize: 12,
-    color: '#fbbf24',
-    lineHeight: 1.5,
+  costTitle: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#22c55e',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    marginBottom: 10,
+  },
+  costRows: { display: 'flex', flexDirection: 'column', gap: 6 },
+  costRow:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  costLabel: { fontSize: 12, color: 'var(--text-muted)' },
+  costValue: { fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'monospace' },
+  costDivider: { height: 1, background: 'rgba(34,197,94,0.15)', margin: '2px 0' },
+  costNote: {
+    fontSize: 10.5,
+    color: 'var(--text-muted)',
+    marginTop: 8,
+    lineHeight: 1.4,
   },
   centered: {
     flex: 1,

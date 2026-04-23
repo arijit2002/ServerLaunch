@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getStateColor } from '../utils/constants';
+import { getStateColor, INSTANCE_TYPES } from '../utils/constants';
 import { useToast } from './Toast';
 
 export default function InstanceCard({ instance, onRefresh }) {
@@ -7,10 +7,12 @@ export default function InstanceCard({ instance, onRefresh }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const toast = useToast();
   const { id, name, state, type, publicIp, privateIp, region, platform, az } = instance;
-  const stateColor = getStateColor(state);
-  const isRunning  = state === 'running';
-  const isStopped  = state === 'stopped';
-  const isDead     = state === 'terminated' || state === 'shutting-down';
+  const stateColor  = getStateColor(state);
+  const isRunning   = state === 'running';
+  const isStopped   = state === 'stopped';
+  const isDead      = state === 'terminated' || state === 'shutting-down';
+  const typeInfo    = INSTANCE_TYPES.find(t => t.value === type);
+  const hourlyPrice = typeInfo?.pricePerHour;
 
   async function doAction(action, successMsg) {
     setLoading(action);
@@ -35,9 +37,14 @@ export default function InstanceCard({ instance, onRefresh }) {
               <p style={styles.idText}>{id}</p>
             </div>
           </div>
-          <span style={{ ...styles.badge, background: `${stateColor}22`, color: stateColor, border: `1px solid ${stateColor}44` }}>
-            {state}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+            <span style={{ ...styles.badge, background: `${stateColor}22`, color: stateColor, border: `1px solid ${stateColor}44` }}>
+              {state}
+            </span>
+            {isRunning && hourlyPrice && (
+              <span style={styles.priceBadge}>${hourlyPrice.toFixed(4)}/hr</span>
+            )}
+          </div>
         </div>
 
         <div style={styles.grid}>
@@ -188,6 +195,16 @@ const styles = {
     alignItems: 'center',
     paddingTop: 4,
     borderTop: '1px solid var(--border)',
+  },
+  priceBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#22c55e',
+    fontFamily: 'monospace',
+    background: 'rgba(34,197,94,0.1)',
+    border: '1px solid rgba(34,197,94,0.2)',
+    borderRadius: 10,
+    padding: '2px 7px',
   },
   btnStart: { background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' },
   btnStop:  { background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' },
