@@ -1,18 +1,26 @@
 import React, { useState } from 'react';
 import { getStateColor, INSTANCE_TYPES } from '../utils/constants';
 import { useToast } from './Toast';
+import ConnectModal from './ConnectModal';
+import MetricsModal from './MetricsModal';
+import SecurityGroupModal from './SecurityGroupModal';
 
 export default function InstanceCard({ instance, onRefresh }) {
-  const [loading, setLoading] = useState(null);
+  const [loading,     setLoading]     = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showConnect, setShowConnect] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [showSg,      setShowSg]      = useState(false);
   const toast = useToast();
-  const { id, name, state, type, publicIp, privateIp, region, platform, az } = instance;
+
+  const { id, name, state, type, publicIp, privateIp, region, platform, az, keyName } = instance;
   const stateColor  = getStateColor(state);
   const isRunning   = state === 'running';
   const isStopped   = state === 'stopped';
   const isDead      = state === 'terminated' || state === 'shutting-down';
   const typeInfo    = INSTANCE_TYPES.find(t => t.value === type);
   const hourlyPrice = typeInfo?.pricePerHour;
+  const monthlyPrice = hourlyPrice ? (hourlyPrice * 730).toFixed(2) : null;
 
   async function doAction(action, successMsg) {
     setLoading(action);
@@ -42,7 +50,9 @@ export default function InstanceCard({ instance, onRefresh }) {
               {state}
             </span>
             {isRunning && hourlyPrice && (
-              <span style={styles.priceBadge}>${hourlyPrice.toFixed(4)}/hr</span>
+              <span style={styles.priceBadge} title={`~$${monthlyPrice}/mo`}>
+                ${hourlyPrice.toFixed(4)}/hr · ~${monthlyPrice}/mo
+              </span>
             )}
           </div>
         </div>
@@ -54,36 +64,58 @@ export default function InstanceCard({ instance, onRefresh }) {
           <InfoItem label="Zone"       value={az} />
           <InfoItem label="Public IP"  value={publicIp} mono />
           <InfoItem label="Private IP" value={privateIp} mono />
+          {keyName && <InfoItem label="Key Pair" value={keyName} />}
         </div>
 
         {!isDead && (
-          <div style={styles.actions}>
-            {isStopped && (
-              <button className="btn btn-sm" style={styles.btnStart}
-                disabled={!!loading} onClick={() => doAction('start', `Starting ${name}…`)}>
-                {loading === 'start' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '▶'} Start
+          <>
+            {/* Primary controls */}
+            <div style={styles.actions}>
+              {isStopped && (
+                <button className="btn btn-sm" style={styles.btnStart}
+                  disabled={!!loading} onClick={() => doAction('start', `Starting ${name}…`)}>
+                  {loading === 'start' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '▶'} Start
+                </button>
+              )}
+              {isRunning && (
+                <button className="btn btn-sm" style={styles.btnStop}
+                  disabled={!!loading} onClick={() => doAction('stop', `Stopping ${name}…`)}>
+                  {loading === 'stop' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '■'} Stop
+                </button>
+              )}
+              {isRunning && (
+                <button className="btn btn-secondary btn-sm"
+                  disabled={!!loading} onClick={() => doAction('reboot', `Rebooting ${name}…`)}>
+                  {loading === 'reboot' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '↺'} Reboot
+                </button>
+              )}
+              <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }}
+                disabled={!!loading} onClick={() => setShowConfirm(true)}>
+                ✕ Terminate
               </button>
-            )}
-            {isRunning && (
-              <button className="btn btn-sm" style={styles.btnStop}
-                disabled={!!loading} onClick={() => doAction('stop', `Stopping ${name}…`)}>
-                {loading === 'stop' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '■'} Stop
+            </div>
+
+            {/* Secondary: Connect / Metrics / Security Groups */}
+            <div style={styles.secondaryActions}>
+              {isRunning && (
+                <button style={styles.iconBtn} onClick={() => setShowConnect(true)} title="SSH / SSM Connect">
+                  <span>⌨</span> Connect
+                </button>
+              )}
+              {isRunning && (
+                <button style={styles.iconBtn} onClick={() => setShowMetrics(true)} title="CloudWatch Metrics">
+                  <span>📊</span> Metrics
+                </button>
+              )}
+              <button style={styles.iconBtn} onClick={() => setShowSg(true)} title="Security Groups">
+                <span>🛡</span> Security Groups
               </button>
-            )}
-            {isRunning && (
-              <button className="btn btn-secondary btn-sm"
-                disabled={!!loading} onClick={() => doAction('reboot', `Rebooting ${name}…`)}>
-                {loading === 'reboot' ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '↺'} Reboot
-              </button>
-            )}
-            <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }}
-              disabled={!!loading} onClick={() => setShowConfirm(true)}>
-              ✕ Terminate
-            </button>
-          </div>
+            </div>
+          </>
         )}
       </div>
 
+      {/* Terminate confirm */}
       {showConfirm && (
         <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -93,19 +125,19 @@ export default function InstanceCard({ instance, onRefresh }) {
               All data on instance store volumes will be lost. This cannot be undone.
             </p>
             <div style={styles.modalActions}>
-              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>
-                Cancel
-              </button>
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>Cancel</button>
               <button className="btn btn-danger" onClick={() => {
                 setShowConfirm(false);
                 doAction('terminate', `Terminating ${name}…`);
-              }}>
-                Yes, Terminate
-              </button>
+              }}>Yes, Terminate</button>
             </div>
           </div>
         </div>
       )}
+
+      {showConnect && <ConnectModal instance={instance} onClose={() => setShowConnect(false)} />}
+      {showMetrics && <MetricsModal instance={instance} onClose={() => setShowMetrics(false)} />}
+      {showSg      && <SecurityGroupModal instance={instance} onClose={() => setShowSg(false)} />}
     </>
   );
 }
@@ -125,90 +157,50 @@ const styles = {
     border: '1px solid var(--border)',
     borderRadius: 12,
     padding: '18px 20px',
-    transition: 'border-color 150ms, transform 150ms',
+    transition: 'border-color 150ms',
     display: 'flex',
     flexDirection: 'column',
     gap: 14,
   },
-  header: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  titleRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 10,
-    minWidth: 0,
-  },
-  dot: {
-    width: 9,
-    height: 9,
-    borderRadius: '50%',
-    flexShrink: 0,
-    marginTop: 5,
-  },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  titleRow: { display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 },
+  dot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0, marginTop: 5 },
   name: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    maxWidth: 200,
+    fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200,
   },
-  idText: {
-    fontSize: 11.5,
-    color: 'var(--text-muted)',
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
+  idText: { fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 },
   badge: {
-    padding: '3px 10px',
-    borderRadius: 20,
-    fontSize: 11.5,
-    fontWeight: 600,
-    flexShrink: 0,
-    textTransform: 'capitalize',
+    padding: '3px 10px', borderRadius: 20, fontSize: 11.5,
+    fontWeight: 600, flexShrink: 0, textTransform: 'capitalize',
   },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '8px 16px',
-  },
-  infoItem: {},
-  infoLabel: {
-    fontSize: 10.5,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: 1,
-  },
-  infoValue: {
-    fontSize: 12.5,
-    color: 'var(--text-secondary)',
-  },
+  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' },
+  infoItem:  {},
+  infoLabel: { fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 },
+  infoValue: { fontSize: 12.5, color: 'var(--text-secondary)' },
   actions: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    paddingTop: 4,
-    borderTop: '1px solid var(--border)',
+    display: 'flex', gap: 8, alignItems: 'center',
+    paddingTop: 4, borderTop: '1px solid var(--border)',
+  },
+  secondaryActions: {
+    display: 'flex', gap: 6, alignItems: 'center',
+    paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.04)',
+  },
+  iconBtn: {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '4px 10px', borderRadius: 6,
+    border: '1px solid var(--border)', background: 'transparent',
+    color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer',
+    transition: 'background 150ms, color 150ms, border-color 150ms',
   },
   priceBadge: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#22c55e',
-    fontFamily: 'monospace',
-    background: 'rgba(34,197,94,0.1)',
-    border: '1px solid rgba(34,197,94,0.2)',
-    borderRadius: 10,
-    padding: '2px 7px',
+    fontSize: 11, fontWeight: 600, color: '#22c55e', fontFamily: 'monospace',
+    background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)',
+    borderRadius: 10, padding: '2px 7px', whiteSpace: 'nowrap',
   },
-  btnStart: { background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' },
-  btnStop:  { background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' },
-  modalTitle: { fontSize: 17, fontWeight: 700, color: 'var(--danger)', marginBottom: 12 },
-  modalText:  { fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 24 },
+  btnStart: { background: 'rgba(34,197,94,0.15)',   color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' },
+  btnStop:  { background: 'rgba(245,158,11,0.15)',  color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' },
+  modalTitle:   { fontSize: 17, fontWeight: 700, color: 'var(--danger)', marginBottom: 12 },
+  modalText:    { fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 24 },
   modalActions: { display: 'flex', gap: 10, justifyContent: 'flex-end' },
 };

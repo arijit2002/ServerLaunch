@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INSTANCE_TYPES, DEFAULT_REGIONS, OS_OPTIONS, estimateCost } from '../utils/constants';
 import { useToast } from './Toast';
 
@@ -8,13 +8,21 @@ const DEFAULT_FORM = {
   instanceType: 't3.micro',
   storageSize: 20,
   region: 'us-east-1',
+  keyPairName: '',
 };
 
 export default function LaunchInstance({ onDone }) {
-  const [form, setForm]     = useState(DEFAULT_FORM);
-  const [step, setStep]     = useState('form');  // 'form' | 'launching' | 'done'
-  const [result, setResult] = useState(null);
+  const [form, setForm]         = useState(DEFAULT_FORM);
+  const [step, setStep]         = useState('form');
+  const [result, setResult]     = useState(null);
+  const [keyPairs, setKeyPairs] = useState([]);
   const toast = useToast();
+
+  useEffect(() => {
+    window.serverLaunch.listKeyPairs(form.region).then(res => {
+      if (res.success) setKeyPairs(res.keyPairs);
+    });
+  }, [form.region]);
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
@@ -39,6 +47,7 @@ export default function LaunchInstance({ onDone }) {
       storageSize:  form.storageSize,
       name:         form.name,
       os:           form.os,
+      keyPairName:  form.keyPairName || undefined,
     });
 
     if (launchRes.success) {
@@ -155,6 +164,25 @@ export default function LaunchInstance({ onDone }) {
               ))}
             </select>
           </Section>
+
+          {/* Key Pair */}
+          <Section title="6  Key Pair (optional)">
+            <select
+              className="select"
+              value={form.keyPairName}
+              onChange={e => setField('keyPairName', e.target.value)}
+            >
+              <option value="">— No key pair (use SSM to connect)</option>
+              {keyPairs.map(kp => (
+                <option key={kp.keyPairId} value={kp.name}>{kp.name}</option>
+              ))}
+            </select>
+            {keyPairs.length === 0 && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                No key pairs in this region. Create one in the Key Pairs page first.
+              </p>
+            )}
+          </Section>
         </div>
 
         {/* Summary Panel */}
@@ -162,11 +190,12 @@ export default function LaunchInstance({ onDone }) {
           <div style={styles.summaryCard}>
             <h3 style={styles.summaryTitle}>Summary</h3>
             <div style={styles.summaryRows}>
-              <SummaryRow label="Name"    value={form.name || '—'} />
-              <SummaryRow label="OS"      value={`${selectedOS.icon} ${selectedOS.label}`} />
-              <SummaryRow label="Type"    value={form.instanceType} mono />
-              <SummaryRow label="Storage" value={`${form.storageSize} GB (gp3)`} />
-              <SummaryRow label="Region"  value={DEFAULT_REGIONS.find(r => r.value === form.region)?.label || form.region} />
+              <SummaryRow label="Name"     value={form.name || '—'} />
+              <SummaryRow label="OS"       value={`${selectedOS.icon} ${selectedOS.label}`} />
+              <SummaryRow label="Type"     value={form.instanceType} mono />
+              <SummaryRow label="Storage"  value={`${form.storageSize} GB (gp3)`} />
+              <SummaryRow label="Region"   value={DEFAULT_REGIONS.find(r => r.value === form.region)?.label || form.region} />
+              <SummaryRow label="Key Pair" value={form.keyPairName || 'None (SSM only)'} />
             </div>
 
             {cost && (
