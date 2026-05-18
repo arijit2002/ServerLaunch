@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "webpack --mode development --watch",
     "build": "webpack --mode production",
-    "start": "electron .",
-    "app": "npm run build && electron ."
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "app": "npm run build && env -u ELECTRON_RUN_AS_NODE electron ."
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.0.0",
